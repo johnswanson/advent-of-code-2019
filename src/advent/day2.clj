@@ -1,6 +1,7 @@
-(ns advent.day2)
+(ns advent.day2
+  (:require [advent.reader :as r]))
 
-(defn get-pos [e pos]
+(defn resolve [e pos]
   (nth (:program e) pos))
 
 (defn update-execution [e pos n]
@@ -10,15 +11,15 @@
 (defn ^{:args 3}
   add
   [e *x *y pos]
-  (let [x (get-pos e *x)
-        y (get-pos e *y)]
+  (let [x (resolve e *x)
+        y (resolve e *y)]
     (update-execution e pos (+ x y))))
 
 (defn ^{:args 3}
   multiply
   [e *x *y pos]
-  (update-execution e pos (* (get-pos e *x)
-                             (get-pos e *y))))
+  (update-execution e pos (* (resolve e *x)
+                             (resolve e *y))))
 
 (defn ^{:args 0}
   halt
@@ -55,3 +56,16 @@
          (drop-while (complement :halted?))
          first
          :program)))
+
+(defn find-value []
+  (let [program (vec (r/program "day2/program.txt"))]
+    (for [x (range 100)
+          y (range 100)
+          :when (-> program
+                    (assoc 1 x)
+                    (assoc 2 y)
+                    exec
+                    first
+                    (= 19690720))]
+      (+ (* 100 x)
+         y))))
