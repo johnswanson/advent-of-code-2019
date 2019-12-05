@@ -14,3 +14,8 @@
   (is (= [3500 9 10 70 2 3 11 0 99 30 40 50]
          (intcode/exec
           [1 9 10 3 2 3 11 0 99 30 40 50]))))
+
+(deftest interpreting-opcodes
+  (is (= {:code 2
+          :modes [false true]}
+         (intcode/interpret-op 1002))))

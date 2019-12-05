@@ -17,14 +17,6 @@
        (map day1/total-fuel-required)
        (reduce +)))
 
-(def day2-program
-  (-> (reader/program "day2/program.txt")
-      vec
-      (assoc 1 12)
-      (assoc 2 2)
-      (day2/exec)
-      (first)))
-
 (def day3-solution-part-1
   (day3/solve (reader/lines "day3/wires.txt")))
 
