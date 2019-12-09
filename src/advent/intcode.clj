@@ -1,6 +1,7 @@
 (ns advent.intcode
   (:require [clojure.java.io :as io]
-            [clojure.string :as str]))
+            [clojure.string :as str]
+            [clojure.core.async :as a]))
 
 (defn read-input [_]
   (Integer/parseInt (read-line)))
@@ -17,13 +18,13 @@
 (defn ^{:args 1}
   save-input
   [e pos]
-  (let [input (read-input e)]
+  (let [input (a/<!! (:input-ch e))]
     (update-execution e pos input)))
 
 (defn ^{:args 1}
   output
   [e pos]
-  (prn (resolve e pos))
+  (a/go (a/>! (:output-ch e) (resolve e pos)))
   e)
 
 (defn ^{:args 3}
@@ -118,7 +119,19 @@
                                            new-instruction-pointer
                                            (+ instruction-pointer (inc arg-count)))))))))
 
-(defn exec [program]
+(defn exec [program input-ch output-ch]
+  (let [execution {:program program
+                   :halted? false
+                   :instruction-pointer 0
+                   :input-ch input-ch
+                   :output-ch output-ch}]
+    (->> execution
+         (iterate exec*)
+         (drop-while (complement :halted?))
+         first
+         :program)))
+
+#_(defn exec [program]
   (let [execution {:program program
                    :halted? false
                    :instruction-pointer 0}]
@@ -131,7 +144,6 @@
                  first
                  :program))))))
 
-
-(defn exec-with-inputs [program inputs]
+#_(defn exec-with-inputs [program inputs]
   (binding [*in* (io/reader (char-array (str/join "\n" inputs)))]
     (exec program)))
