@@ -18,14 +18,16 @@
 (defn ^{:args 1}
   save-input
   [e pos]
-  (let [input (a/<!! (:input-ch e))]
-    (update-execution e pos input)))
+  (if-let [input (:input e)]
+    (-> e
+        (dissoc :input)
+        (update-execution pos input))
+    (assoc e :awaiting-input? true)))
 
 (defn ^{:args 1}
   output
   [e pos]
-  (a/go (a/>! (:output-ch e) (resolve e pos)))
-  e)
+  (assoc e :pending-output? (resolve e pos)))
 
 (defn ^{:args 3}
   less-than
@@ -111,25 +113,57 @@
                 (subvec (:program e)
                         (inc instruction-pointer)
                         (inc (+ instruction-pointer arg-count)))
-                immediate-mode?)]
-      (-> op
-          (apply e args)
-          (update :instruction-pointer (fn [new-instruction-pointer]
-                                         (if (not= new-instruction-pointer instruction-pointer)
-                                           new-instruction-pointer
-                                           (+ instruction-pointer (inc arg-count)))))))))
+                immediate-mode?)
+          new-e (apply op e args)]
+      (if (or (not= (:instruction-pointer new-e)
+                    (:instruction-pointer e))
+              (:awaiting-input? new-e))
+        new-e
+        (update new-e :instruction-pointer (fn [new-instruction-pointer]
+                                             (+ instruction-pointer (inc arg-count))))))))
 
-(defn exec [program input-ch output-ch]
+(defn input [env v]
+  (assoc env :input v :awaiting-input? false))
+
+(defn output? [execution]
+  (:pending-output? execution))
+
+(defn take-output [execution]
+  (assoc execution :pending-output? nil))
+
+(defn halted? [execution]
+  (:halted? execution))
+
+(defn awaiting-input? [execution]
+  (:awaiting-input? execution))
+
+(defn paused? [execution]
+  (some #(% execution) [output? halted? awaiting-input?]))
+
+(defn continue [env]
+  (let [result
+        (->> env
+             (iterate exec*)
+             (drop-while #(not (paused? %)))
+             first)]
+    result))
+
+(defn exec [program]
   (let [execution {:program program
                    :halted? false
                    :instruction-pointer 0
-                   :input-ch input-ch
-                   :output-ch output-ch}]
-    (->> execution
-         (iterate exec*)
-         (drop-while (complement :halted?))
-         first
-         :program)))
+                   :pending-output? false
+                   :awaiting-input? false}]
+    execution))
+
+(defn exec-with-inputs [program inputs]
+  (:pending-output?
+   (reduce (fn [paused-execution in]
+             (-> paused-execution
+                 (input in)
+                 (continue)))
+           (exec program)
+           inputs)))
 
 #_(defn exec [program]
   (let [execution {:program program
