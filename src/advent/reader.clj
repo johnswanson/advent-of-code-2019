@@ -18,3 +18,9 @@
            (io/reader)
            (slurp)
            (string/split #","))))
+
+(defn digits [file-name]
+  (->> (slurp (io/resource file-name))
+       (map str)
+       (butlast)
+       (map #(Integer/parseInt %))))

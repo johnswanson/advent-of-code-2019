@@ -1,19 +1,24 @@
 (ns advent.intcode
   (:require [clojure.java.io :as io]
             [clojure.string :as str]
-            [clojure.core.async :as a]))
+            [clojure.core.async :as a]
+            [advent.reader :as r]))
 
 (defn read-input [_]
   (Integer/parseInt (read-line)))
 
-(defn resolve [e {:keys [pointer? value]}]
-  (if pointer?
-    (nth (:program e) value)
-    value))
+(defn resolve [e {:keys [mode value]}]
+  (case mode
+    :immediate value
+    :position (-> e :program (nth value))
+    :relative (-> e :program (nth (+ value (:relative-base-offset e))))))
 
-(defn update-execution [e {:keys [pointer? value]} n]
-  (assert pointer?)
-  (update e :program #(assoc % value n)))
+(defn update-execution [e {:keys [mode value]} n]
+  (assert (not= :immediate mode))
+  (let [position (case mode
+                   :position value
+                   :relative (+ value (:relative-base-offset e)))]
+    (update e :program #(assoc % position n))))
 
 (defn ^{:args 1}
   save-input
@@ -75,6 +80,11 @@
     (assoc e :instruction-pointer (resolve e p2))
     e))
 
+(defn ^{:args 1}
+  modify-relative-base-offset
+  [e offset]
+  (update e :relative-base-offset + (resolve e offset)))
+
 (def ops
   {1 #'add
    2 #'multiply
@@ -84,36 +94,38 @@
    6 #'jump-if-false
    7 #'less-than
    8 #'equals
+   9 #'modify-relative-base-offset
    99 #'halt})
 
 (defn interpret-op [opcode]
   (let [code (mod opcode 100)
-        modes (mapv #(= \1 %) (reverse (str (quot opcode 100))))]
+        modes (reverse (str (quot opcode 100)))]
     {:code code
-     :immediate-mode? modes}))
+     :mode (fn [index]
+             (case (nth modes index ::nonexistent)
+               \1 :immediate
+               \2 :relative
+               :position))}))
 
-(defn make-args [args immediate-mode?]
+(defn make-args [args mode]
   (map-indexed
    (fn [i arg]
-     (if (get immediate-mode? i false)
-       {:pointer? false
-        :value arg}
-       {:pointer? true
-        :value arg}))
+     {:mode (mode i)
+      :value arg})
    args))
 
 (defn exec* [{:as e :keys [instruction-pointer]}]
   (if (< (count (:program e)) (inc instruction-pointer))
     (halt e)
     (let [full-code (nth (:program e) instruction-pointer)
-          {:keys [code immediate-mode?]} (interpret-op full-code)
+          {:keys [code mode]} (interpret-op full-code)
           op (get ops code)
           arg-count (-> op meta :args)
           args (make-args
                 (subvec (:program e)
                         (inc instruction-pointer)
                         (inc (+ instruction-pointer arg-count)))
-                immediate-mode?)
+                mode)
           new-e (apply op e args)]
       (if (or (not= (:instruction-pointer new-e)
                     (:instruction-pointer e))
@@ -149,21 +161,31 @@
     result))
 
 (defn exec [program]
-  (let [execution {:program program
+  (let [execution {:program (vec (concat program
+                                         (repeat 10000 0)))
                    :halted? false
                    :instruction-pointer 0
+                   :relative-base-offset 0
                    :pending-output? false
                    :awaiting-input? false}]
     execution))
 
+(defn continue-taking-input [ex]
+  (continue (assoc ex :pending-output? nil)))
+
+(defn exec-until-halted [program]
+  (iterate continue))
+
 (defn exec-with-inputs [program inputs]
-  (:pending-output?
-   (reduce (fn [paused-execution in]
-             (-> paused-execution
-                 (input in)
-                 (continue)))
-           (exec program)
-           inputs)))
+  (->> (reductions (fn [paused-execution in]
+                     (-> paused-execution
+                         (input in)
+                         (continue-taking-input)))
+                   (exec program)
+                   (concat inputs (repeat 0)))
+       (take-while (complement :halted?))
+       (next)
+       (map :pending-output?)))
 
 #_(defn exec [program]
   (let [execution {:program program
