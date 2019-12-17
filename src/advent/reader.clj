@@ -24,3 +24,14 @@
        (map str)
        (butlast)
        (map #(Integer/parseInt %))))
+
+(defn- asteroids-on-line [map-line]
+  (->> map-line
+       (map-indexed vector)
+       (filter #(= (second %) \#))
+       (map first)))
+
+(defn- asteroids [file-name]
+  (for [[y map-line] (map-indexed vector (lines file-name))
+        x (asteroids-on-line map-line)]
+    [x y]))
